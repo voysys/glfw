@@ -569,6 +569,97 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg,
             break;
         }
 
+        case WM_POINTERDOWN:
+        case WM_POINTERUP:
+        {
+            auto pointerId = GET_POINTERID_WPARAM(wParam);
+            POINTER_INFO pointerInfo;
+            if (!GetPointerInfo(pointerId, &pointerInfo)) {
+                return 0;
+            }
+
+            int x = GET_X_LPARAM(lParam);
+            int y = GET_Y_LPARAM(lParam);
+
+            POINT pt;
+            pt.x = x;
+            pt.y = y;
+
+            ScreenToClient(hWnd, &pt);
+
+            int button, action;
+
+            button = GLFW_MOUSE_BUTTON_LEFT;
+
+            if (uMsg == WM_POINTERDOWN) {
+                window->win32.cursorTracked = GLFW_TRUE;
+                _glfwInputCursorEnter(window, GLFW_TRUE);
+                action = GLFW_PRESS;
+            }
+            else {
+                action = GLFW_RELEASE;
+            }
+
+            // Ugly hacks to move the pointer to the correct location before issuing the click event
+            _glfwInputCursorPos(window, pt.x, pt.y);
+            _glfwPlatformSetCursorMode(window, GLFW_CURSOR_NORMAL);
+            _glfwPlatformSetCursorPos(window, pt.x, pt.y);
+
+            _glfwInputMouseClick(window, button, action, getKeyMods());
+
+            if (action == GLFW_RELEASE) {
+                window->win32.cursorTracked = GLFW_FALSE;
+                _glfwInputCursorEnter(window, GLFW_FALSE);
+            }
+
+            return 0;
+        }
+
+        case WM_POINTERUPDATE:
+        {
+            auto pointerId = GET_POINTERID_WPARAM(wParam);
+            POINTER_INFO pointerInfo;
+            if (!GetPointerInfo(pointerId, &pointerInfo)) {
+                return 0;
+            }
+
+            int x = GET_X_LPARAM(lParam);
+            int y = GET_Y_LPARAM(lParam);
+
+            POINT pt;
+            pt.x = x;
+            pt.y = y;
+
+            ScreenToClient(hWnd, &pt);
+
+            _glfwInputCursorPos(window, pt.x, pt.y);
+
+            _glfwPlatformSetCursorMode(window, GLFW_CURSOR_NORMAL);
+            _glfwPlatformSetCursorPos(window, pt.x, pt.y);
+
+            if (!window->win32.cursorTracked)
+            {
+                TRACKMOUSEEVENT tme;
+                ZeroMemory(&tme, sizeof(tme));
+                tme.cbSize = sizeof(tme);
+                tme.dwFlags = TME_LEAVE;
+                tme.hwndTrack = window->win32.handle;
+                TrackMouseEvent(&tme);
+
+                window->win32.cursorTracked = GLFW_TRUE;
+                _glfwInputCursorEnter(window, GLFW_TRUE);
+            }
+
+            return 0;
+        }
+
+        case WM_POINTERLEAVE:
+        {
+            window->win32.cursorTracked = GLFW_FALSE;
+            _glfwInputCursorEnter(window, GLFW_FALSE);
+            return 0;
+        }
+
         case WM_LBUTTONDOWN:
         case WM_RBUTTONDOWN:
         case WM_MBUTTONDOWN:
