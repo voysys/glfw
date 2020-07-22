@@ -426,6 +426,15 @@ GLFWbool _glfwRawMouseMotionSupportedNull(void)
     return GLFW_TRUE;
 }
 
+void _glfwPlatformSetTouchInputNull(_GLFWwindow *window, GLFWbool enabled)
+{
+}
+
+GLFWbool _glfwPlatformTouchInputSupportedNull(void)
+{
+    return GLFW_TRUE;
+}
+
 void _glfwShowWindowNull(_GLFWwindow* window)
 {
     window->null.visible = GLFW_TRUE;
