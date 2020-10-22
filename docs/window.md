@@ -639,6 +639,23 @@ void window_close_callback(GLFWwindow* window)
 }
 ```
 
+If you wish to be notified when the user attempts to shut down the machine, set a 
+machine shutdown callback.
+
+@code
+glfwSetMachineShutdownCallback(window, machine_shutdown_callback);
+@endcode
+
+The callback function is called when GLFW detects that the machine is shutting down.
+It can be used for example to save data to disk in order to minimize risk of data loss.
+
+@code
+void machine_shutdown_callback(GLFWwindow* window)
+{
+    initiate_save_of_important_data_to_disk();
+}
+@endcode
+
 
 ### Window size {#window_size}
 
