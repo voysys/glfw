@@ -1677,10 +1677,11 @@ typedef void (* GLFWwindowclosefun)(GLFWwindow* window);
  *
  *  @sa @ref machine_shutdown
  *  @sa @ref glfwSetMachineShutdownCallback
+ *  @return GLFW_TRUE to accept the shutdown or GLFW_FALSE to interrupt it
  *
  *  @ingroup window
  */
-typedef void (* GLFWmachineShutdownfun)(GLFWwindow*);
+typedef int (* GLFWmachineShutdownfun)(GLFWwindow*);
 
 /*! @brief The function pointer type for window content refresh callbacks.
  *
