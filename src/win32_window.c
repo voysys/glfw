@@ -652,6 +652,11 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             return 0;
         }
 
+        case WM_QUERYENDSESSION:
+        {
+            return _glfwInputMachineShutdown(window);
+        }
+
         case WM_INPUTLANGCHANGE:
         {
             _glfwUpdateKeyNamesWin32();
@@ -1326,13 +1331,6 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             _glfw_free(paths);
 
             DragFinish(drop);
-            return 0;
-        }
-
-        case WM_QUERYENDSESSION:
-        case WM_ENDSESSION:
-        {
-            _glfwInputMachineShutdown(window);
             return 0;
         }
     }
