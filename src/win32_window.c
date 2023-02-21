@@ -1146,8 +1146,8 @@ static LRESULT CALLBACK windowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
                 UINT i;
                 int width, height, xpos, ypos;
 
-                _glfwPlatformGetWindowSize(window, &width, &height);
-                _glfwPlatformGetWindowPos(window, &xpos, &ypos);
+                _glfw.platform.getWindowSize(window, &width, &height);
+                _glfw.platform.getWindowPos(window, &xpos, &ypos);
 
                 for (i = 0;  i < count;  i++)
                 {
