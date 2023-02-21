@@ -2155,7 +2155,7 @@ GLFWbool _glfwRawMouseMotionSupportedWin32(void)
     return GLFW_TRUE;
 }
 
-void _glfwPlatformSetTouchInputWin32(_GLFWwindow* window, int enabled)
+void _glfwSetTouchInputWin32(_GLFWwindow* window, int enabled)
 {
     if (!_glfw.win32.touch.available)
         return;
@@ -2166,7 +2166,7 @@ void _glfwPlatformSetTouchInputWin32(_GLFWwindow* window, int enabled)
         UnregisterTouchWindow(window->win32.handle);
 }
 
-GLFWbool _glfwPlatformTouchInputSupportedWin32(void)
+GLFWbool _glfwTouchInputSupportedWin32(void)
 {
     return _glfw.win32.touch.available;
 }

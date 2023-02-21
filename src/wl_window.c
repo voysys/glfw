@@ -2935,13 +2935,13 @@ GLFWbool _glfwRawMouseMotionSupportedWayland(void)
     return GLFW_TRUE;
 }
 
-void _glfwPlatformSetTouchInputWayland(_GLFWwindow *window, GLFWbool enabled)
+void _glfwSetTouchInputWayland(_GLFWwindow *window, GLFWbool enabled)
 {
     _glfwInputError(GLFW_FEATURE_UNIMPLEMENTED,
                     "Wayland: Touch input not yet implemented");
 }
 
-GLFWbool _glfwPlatformTouchInputSupportedWayland(void)
+GLFWbool _glfwTouchInputSupportedWayland(void)
 {
     return GLFW_FALSE;
 }
