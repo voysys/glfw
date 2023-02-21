@@ -702,7 +702,7 @@ GLFWAPI void glfwSetInputMode(GLFWwindow* handle, int mode, int value)
 
         case GLFW_TOUCH:
         {
-            if (!_glfwPlatformTouchInputSupported())
+            if (!_glfw.platform.touchInputSupported())
             {
                 _glfwInputError(GLFW_PLATFORM_ERROR,
                                 "Touch input is not supported on this system");
