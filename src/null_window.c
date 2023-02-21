@@ -426,11 +426,11 @@ GLFWbool _glfwRawMouseMotionSupportedNull(void)
     return GLFW_TRUE;
 }
 
-void _glfwPlatformSetTouchInputNull(_GLFWwindow *window, GLFWbool enabled)
+void _glfwSetTouchInputNull(_GLFWwindow *window, GLFWbool enabled)
 {
 }
 
-GLFWbool _glfwPlatformTouchInputSupportedNull(void)
+GLFWbool _glfwTouchInputSupportedNull(void)
 {
     return GLFW_TRUE;
 }

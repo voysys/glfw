@@ -2779,13 +2779,13 @@ GLFWbool _glfwRawMouseMotionSupportedX11(void)
     return _glfw.x11.xi.available;
 }
 
-void _glfwPlatformSetTouchInputX11(_GLFWwindow *window, GLFWbool enabled)
+void _glfwSetTouchInputX11(_GLFWwindow *window, GLFWbool enabled)
 {
     _glfwInputError(GLFW_FEATURE_UNIMPLEMENTED,
                     "Cocoa: Touch input not yet implemented");
 }
 
-GLFWbool _glfwPlatformTouchInputSupportedX11(void)
+GLFWbool _glfwTouchInputSupportedX11(void)
 {
     return GLFW_FALSE;
 }
