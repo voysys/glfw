@@ -692,6 +692,9 @@ void _glfwSetWindowMousePassthroughWayland(_GLFWwindow* window, GLFWbool enabled
 void _glfwSetRawMouseMotionWayland(_GLFWwindow* window, GLFWbool enabled);
 GLFWbool _glfwRawMouseMotionSupportedWayland(void);
 
+void _glfwSetTouchInputWayland(_GLFWwindow *window, GLFWbool enabled);
+GLFWbool _glfwTouchInputSupportedWayland(void);
+
 void _glfwPollEventsWayland(void);
 void _glfwWaitEventsWayland(void);
 void _glfwWaitEventsTimeoutWayland(double timeout);
