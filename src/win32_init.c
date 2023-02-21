@@ -630,6 +630,8 @@ GLFWbool _glfwConnectWin32(int platformID, _GLFWplatform* platform)
         _glfwSetCursorModeWin32,
         _glfwSetRawMouseMotionWin32,
         _glfwRawMouseMotionSupportedWin32,
+        _glfwSetTouchInputWin32,
+        _glfwTouchInputSupportedWin32,
         _glfwCreateCursorWin32,
         _glfwCreateStandardCursorWin32,
         _glfwDestroyCursorWin32,

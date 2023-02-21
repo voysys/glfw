@@ -386,6 +386,8 @@ GLFWbool _glfwConnectWayland(int platformID, _GLFWplatform* platform)
         _glfwSetCursorModeWayland,
         _glfwSetRawMouseMotionWayland,
         _glfwRawMouseMotionSupportedWayland,
+        _glfwSetTouchInputWayland,
+        _glfwTouchInputSupportedWayland,
         _glfwCreateCursorWayland,
         _glfwCreateStandardCursorWayland,
         _glfwDestroyCursorWayland,
