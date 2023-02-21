@@ -1108,7 +1108,7 @@ GLFWAPI GLFWmachineShutdownfun glfwSetMachineShutdownCallback(GLFWwindow* handle
     assert(window != NULL);
 
     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-    _GLFW_SWAP(window->callbacks.shutdown, cbfun);
+    _GLFW_SWAP(GLFWmachineShutdownfun, window->callbacks.shutdown, cbfun);
     return cbfun;
 }
 
