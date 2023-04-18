@@ -560,8 +560,14 @@ GLFWbool _glfwInitEGL(void)
         extensionSupportedEGL("EGL_KHR_get_all_proc_addresses");
     _glfw.egl.KHR_context_flush_control =
         extensionSupportedEGL("EGL_KHR_context_flush_control");
-    _glfw.egl.EXT_present_opaque =
-        extensionSupportedEGL("EGL_EXT_present_opaque");
+
+    // We get "Failed to create window surface: 
+    // An unrecognized attribute or attribute value was passed in the attribute list"
+    // on some platforms/GPUs if we use this extension
+    // - niclas
+    
+    // _glfw.egl.EXT_present_opaque =
+        // extensionSupportedEGL("EGL_EXT_present_opaque");
 
     return GLFW_TRUE;
 }
