@@ -1495,7 +1495,7 @@ GLFWAPI GLFWtouchfun glfwSetTouchCallback(GLFWwindow* handle, GLFWtouchfun cbfun
     assert(window != NULL);
 
     _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-    _GLFW_SWAP(GLFWkeyfun, window->callbacks.touch, cbfun);
+    _GLFW_SWAP(GLFWtouchfun, window->callbacks.touch, cbfun);
     return cbfun;
 }
 
