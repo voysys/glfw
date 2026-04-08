@@ -558,7 +558,6 @@ struct _GLFWwindow
         GLFWwindowposfun          pos;
         GLFWwindowsizefun         size;
         GLFWwindowclosefun        close;
-        GLFWmachineShutdownfun    shutdown;
         GLFWwindowrefreshfun      refresh;
         GLFWwindowfocusfun        focus;
         GLFWwindowiconifyfun      iconify;
@@ -920,7 +919,6 @@ void _glfwInputWindowIconify(_GLFWwindow* window, GLFWbool iconified);
 void _glfwInputWindowMaximize(_GLFWwindow* window, GLFWbool maximized);
 void _glfwInputWindowDamage(_GLFWwindow* window);
 void _glfwInputWindowCloseRequest(_GLFWwindow* window);
-GLFWbool _glfwInputMachineShutdown(_GLFWwindow* window);
 void _glfwInputWindowMonitor(_GLFWwindow* window, _GLFWmonitor* monitor);
 
 void _glfwInputKey(_GLFWwindow* window,

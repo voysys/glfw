@@ -333,14 +333,6 @@ static void window_close_callback(GLFWwindow* window)
     glfwSetWindowShouldClose(window, slot->closeable);
 }
 
-static int window_machine_shutdown_callback(GLFWwindow* window)
-{
-    printf("%08x at %0.3f: Machine shutdown detected\n",
-           counter++,
-           glfwGetTime());
-    return GLFW_TRUE;
-}
-
 static void window_refresh_callback(GLFWwindow* window)
 {
     Slot* slot = glfwGetWindowUserPointer(window);
@@ -669,7 +661,6 @@ int main(int argc, char** argv)
         glfwSetFramebufferSizeCallback(slots[i].window, framebuffer_size_callback);
         glfwSetWindowContentScaleCallback(slots[i].window, window_content_scale_callback);
         glfwSetWindowCloseCallback(slots[i].window, window_close_callback);
-        glfwSetMachineShutdownCallback(slots[i].window, window_machine_shutdown_callback);
         glfwSetWindowRefreshCallback(slots[i].window, window_refresh_callback);
         glfwSetWindowFocusCallback(slots[i].window, window_focus_callback);
         glfwSetWindowIconifyCallback(slots[i].window, window_iconify_callback);
