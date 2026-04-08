@@ -165,16 +165,6 @@ void _glfwInputWindowCloseRequest(_GLFWwindow* window)
         window->callbacks.close((GLFWwindow*) window);
 }
 
-// Notifies shared code that the machine is shuting down
-//
-GLFWbool _glfwInputMachineShutdown(_GLFWwindow *window)
-{
-    if (window->callbacks.shutdown) {
-        return window->callbacks.shutdown((GLFWwindow*) window);
-    }
-    return GLFW_TRUE;
-}
-
 // Notifies shared code that a window has changed its desired monitor
 //
 void _glfwInputWindowMonitor(_GLFWwindow* window, _GLFWmonitor* monitor)
@@ -1098,17 +1088,6 @@ GLFWAPI GLFWwindowclosefun glfwSetWindowCloseCallback(GLFWwindow* handle,
     assert(window != NULL);
 
     _GLFW_SWAP(GLFWwindowclosefun, window->callbacks.close, cbfun);
-    return cbfun;
-}
-
-GLFWAPI GLFWmachineShutdownfun glfwSetMachineShutdownCallback(GLFWwindow* handle,
-                                                              GLFWmachineShutdownfun cbfun)
-{
-    _GLFWwindow* window = (_GLFWwindow*) handle;
-    assert(window != NULL);
-
-    _GLFW_REQUIRE_INIT_OR_RETURN(NULL);
-    _GLFW_SWAP(GLFWmachineShutdownfun, window->callbacks.shutdown, cbfun);
     return cbfun;
 }
 
