@@ -411,7 +411,17 @@ typedef struct _GLFWwindowWayland
         GLFWbool                    decorations;
         struct wl_buffer*           buffer;
         _GLFWfallbackEdgeWayland    top, left, right, bottom;
+        _GLFWfallbackEdgeWayland    topLeftCorner, topRightCorner;
+        _GLFWfallbackEdgeWayland    leftGrab, rightGrab, bottomGrab, topGrab;
+        _GLFWfallbackEdgeWayland    closeButton, maximizeButton, minimizeButton;
+        struct wl_buffer*           transparentBuffer;
+        struct wl_buffer*           leftCornerBuffer;
+        struct wl_buffer*           rightCornerBuffer;
+        struct wl_buffer*           closeBuffer;
+        struct wl_buffer*           maximizeBuffer;
+        struct wl_buffer*           minimizeBuffer;
         struct wl_surface*          focus;
+        struct wl_surface*          pressed;
     } fallback;
 } _GLFWwindowWayland;
 

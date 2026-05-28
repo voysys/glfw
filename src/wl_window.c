@@ -52,8 +52,19 @@
 #include "idle-inhibit-unstable-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
 
-#define GLFW_BORDER_SIZE    4
-#define GLFW_CAPTION_HEIGHT 24
+#define GLFW_BORDER_SIZE    0
+#define GLFW_RESIZE_GRAB    10
+#define GLFW_CAPTION_HEIGHT 38
+#define GLFW_BUTTON_SIZE    24
+#define GLFW_BUTTON_SPACING 13
+#define GLFW_BUTTON_MARGIN  12
+#define GLFW_BUTTON_MINIMIZE 0
+#define GLFW_BUTTON_MAXIMIZE 1
+#define GLFW_BUTTON_CLOSE    2
+#define GLFW_CORNER_RADIUS  12
+#define GLFW_STATE_REST     0
+#define GLFW_STATE_HOVER    1
+#define GLFW_STATE_ACTIVE   2
 
 static int createTmpfileCloexec(char* tmpname)
 {
@@ -193,12 +204,316 @@ static struct wl_buffer* createShmBuffer(const GLFWimage* image)
     return buffer;
 }
 
+static int fallbackRenderScale(_GLFWwindow* window)
+{
+    int scale = (window->wl.scalingNumerator + 119) / 120;
+    if (scale < 1)
+        scale = 1;
+    if (scale > 3)
+        scale = 3;
+    return scale;
+}
+
+static struct wl_buffer* createCornerBuffer(int isLeft, GLFWbool focused, int renderScale);
+
+static int fallbackFrameColor(GLFWbool focused)
+{
+    return focused ? 34 : 44;
+}
+
+static struct wl_buffer* createButtonBuffer(int glyph, int state, int renderScale)
+{
+    const int size = GLFW_BUTTON_SIZE * renderScale;
+    unsigned char* pixels = _glfw_calloc((size_t) size * size * 4, 1);
+    if (!pixels)
+        return NULL;
+
+    const float center = (size - 1) / 2.0f;
+    const float radius = size / 2.0f - 0.5f;
+    const float radius2 = radius * radius;
+    const float scale = size / 24.0f;
+    const float invSqrt2 = 0.70710678f;
+
+    const int pct = state == GLFW_STATE_ACTIVE ? 30 : (state == GLFW_STATE_HOVER ? 15 : 0);
+    const int bg = (44 * (100 - pct) + 247 * pct) / 100;
+    const int fg = 235;
+    const int SS = 4;
+
+    for (int y = 0;  y < size;  y++)
+    {
+        for (int x = 0;  x < size;  x++)
+        {
+            int covered = 0;
+            int sumR = 0, sumG = 0, sumB = 0;
+
+            for (int sy = 0;  sy < SS;  sy++)
+            {
+                for (int sx = 0;  sx < SS;  sx++)
+                {
+                    const float dx = x + (sx + 0.5f) / SS - center;
+                    const float dy = y + (sy + 0.5f) / SS - center;
+                    if (dx * dx + dy * dy > radius2)
+                        continue;
+
+                    covered++;
+
+                    const float ix = dx / scale + 8.0f;
+                    const float iy = dy / scale + 8.0f;
+                    int onGlyph = 0;
+
+                    if (glyph == GLFW_BUTTON_MINIMIZE)
+                    {
+                        if (ix >= 4.0f && ix <= 12.0f && iy >= 10.0f && iy <= 11.0f)
+                            onGlyph = 1;
+                    }
+                    else if (glyph == GLFW_BUTTON_MAXIMIZE)
+                    {
+                        const int outer = ix >= 4.0f && ix <= 12.0f && iy >= 4.0f && iy <= 12.0f;
+                        const int inner = ix >= 5.0f && ix <= 11.0f && iy >= 5.0f && iy <= 11.0f;
+                        if (outer && !inner)
+                            onGlyph = 1;
+                    }
+                    else
+                    {
+                        if (ix >= 3.5f && ix <= 12.5f && iy >= 3.5f && iy <= 12.5f)
+                        {
+                            const float a = ix - iy;
+                            const float b = ix + iy - 16.0f;
+                            const float ad = (a < 0.0f ? -a : a) * invSqrt2;
+                            const float bd = (b < 0.0f ? -b : b) * invSqrt2;
+                            if (ad <= 0.625f || bd <= 0.625f)
+                                onGlyph = 1;
+                        }
+                    }
+
+                    if (onGlyph)
+                    {
+                        sumR += fg; sumG += fg; sumB += fg;
+                    }
+                    else
+                    {
+                        sumR += bg; sumG += bg; sumB += bg;
+                    }
+                }
+            }
+
+            unsigned char* pixel = pixels + ((size_t) y * size + x) * 4;
+            if (covered > 0)
+            {
+                pixel[0] = (unsigned char) (sumR / covered);
+                pixel[1] = (unsigned char) (sumG / covered);
+                pixel[2] = (unsigned char) (sumB / covered);
+                pixel[3] = (unsigned char) (covered * 255 / (SS * SS));
+            }
+        }
+    }
+
+    const GLFWimage image = { size, size, pixels };
+    struct wl_buffer* buffer = createShmBuffer(&image);
+    _glfw_free(pixels);
+    return buffer;
+}
+
+static void refreshFallbackButton(_GLFWwindow* window,
+                                  _GLFWfallbackEdgeWayland* button,
+                                  struct wl_buffer** slot,
+                                  int glyph)
+{
+    if (!window->wl.fallback.decorations || !button->surface)
+        return;
+
+    int state = GLFW_STATE_REST;
+    if (window->wl.fallback.pressed == button->surface)
+        state = GLFW_STATE_ACTIVE;
+    else if (window->wl.fallback.focus == button->surface)
+        state = GLFW_STATE_HOVER;
+
+    const int rs = fallbackRenderScale(window);
+    struct wl_buffer* old = *slot;
+    *slot = createButtonBuffer(glyph, state, rs);
+
+    wl_surface_set_buffer_scale(button->surface, rs);
+    wl_surface_attach(button->surface, *slot, 0, 0);
+    wl_surface_damage(button->surface, 0, 0, GLFW_BUTTON_SIZE, GLFW_BUTTON_SIZE);
+    wl_surface_commit(button->surface);
+
+    if (old)
+        wl_buffer_destroy(old);
+}
+
+static void refreshFallbackButtonBySurface(_GLFWwindow* window, struct wl_surface* surface)
+{
+    if (surface == window->wl.fallback.closeButton.surface)
+        refreshFallbackButton(window, &window->wl.fallback.closeButton,
+                              &window->wl.fallback.closeBuffer, GLFW_BUTTON_CLOSE);
+    else if (surface == window->wl.fallback.maximizeButton.surface)
+        refreshFallbackButton(window, &window->wl.fallback.maximizeButton,
+                              &window->wl.fallback.maximizeBuffer, GLFW_BUTTON_MAXIMIZE);
+    else if (surface == window->wl.fallback.minimizeButton.surface)
+        refreshFallbackButton(window, &window->wl.fallback.minimizeButton,
+                              &window->wl.fallback.minimizeBuffer, GLFW_BUTTON_MINIMIZE);
+}
+
+static void redrawFallbackDecorations(_GLFWwindow* window)
+{
+    if (!window->wl.fallback.decorations)
+        return;
+
+    const GLFWbool focused = window->wl.activated;
+    const int rs = fallbackRenderScale(window);
+    const unsigned char frame = (unsigned char) fallbackFrameColor(focused);
+
+    unsigned char data[] = { frame, frame, frame, 255 };
+    const GLFWimage image = { 1, 1, data };
+    struct wl_buffer* oldFrame = window->wl.fallback.buffer;
+    window->wl.fallback.buffer = createShmBuffer(&image);
+
+    _GLFWfallbackEdgeWayland* edges[4] = {
+        &window->wl.fallback.top, &window->wl.fallback.left,
+        &window->wl.fallback.right, &window->wl.fallback.bottom
+    };
+    for (int i = 0;  i < 4;  i++)
+    {
+        if (!edges[i]->surface)
+            continue;
+        wl_surface_attach(edges[i]->surface, window->wl.fallback.buffer, 0, 0);
+        wl_surface_damage(edges[i]->surface, 0, 0, 1 << 20, 1 << 20);
+        wl_surface_commit(edges[i]->surface);
+    }
+
+    struct wl_buffer* oldLeft = window->wl.fallback.leftCornerBuffer;
+    struct wl_buffer* oldRight = window->wl.fallback.rightCornerBuffer;
+    window->wl.fallback.leftCornerBuffer = createCornerBuffer(GLFW_TRUE, focused, rs);
+    window->wl.fallback.rightCornerBuffer = createCornerBuffer(GLFW_FALSE, focused, rs);
+
+    wl_surface_set_buffer_scale(window->wl.fallback.topLeftCorner.surface, rs);
+    wl_surface_attach(window->wl.fallback.topLeftCorner.surface,
+                      window->wl.fallback.leftCornerBuffer, 0, 0);
+    wl_surface_damage(window->wl.fallback.topLeftCorner.surface, 0, 0,
+                      GLFW_CORNER_RADIUS, GLFW_CAPTION_HEIGHT);
+    wl_surface_commit(window->wl.fallback.topLeftCorner.surface);
+    wl_surface_set_buffer_scale(window->wl.fallback.topRightCorner.surface, rs);
+    wl_surface_attach(window->wl.fallback.topRightCorner.surface,
+                      window->wl.fallback.rightCornerBuffer, 0, 0);
+    wl_surface_damage(window->wl.fallback.topRightCorner.surface, 0, 0,
+                      GLFW_CORNER_RADIUS, GLFW_CAPTION_HEIGHT);
+    wl_surface_commit(window->wl.fallback.topRightCorner.surface);
+
+    window->wl.fallback.pressed = NULL;
+    refreshFallbackButton(window, &window->wl.fallback.closeButton,
+                          &window->wl.fallback.closeBuffer, GLFW_BUTTON_CLOSE);
+    refreshFallbackButton(window, &window->wl.fallback.maximizeButton,
+                          &window->wl.fallback.maximizeBuffer, GLFW_BUTTON_MAXIMIZE);
+    refreshFallbackButton(window, &window->wl.fallback.minimizeButton,
+                          &window->wl.fallback.minimizeBuffer, GLFW_BUTTON_MINIMIZE);
+
+    if (oldFrame)
+        wl_buffer_destroy(oldFrame);
+    if (oldLeft)
+        wl_buffer_destroy(oldLeft);
+    if (oldRight)
+        wl_buffer_destroy(oldRight);
+}
+
+static struct wl_buffer* createCornerBuffer(int isLeft, GLFWbool focused, int renderScale)
+{
+    const unsigned char frame = (unsigned char) fallbackFrameColor(focused);
+    const int radius = GLFW_CORNER_RADIUS * renderScale;
+    const int width = radius;
+    const int height = GLFW_CAPTION_HEIGHT * renderScale;
+    unsigned char* pixels = _glfw_calloc((size_t) width * height * 4, 1);
+    if (!pixels)
+        return NULL;
+
+    const float cx = isLeft ? (float) radius : 0.0f;
+    const float cy = (float) radius;
+    const float radius2 = (float) radius * (float) radius;
+    const int SS = 4;
+
+    for (int y = 0;  y < height;  y++)
+    {
+        for (int x = 0;  x < width;  x++)
+        {
+            int covered = 0;
+
+            for (int sy = 0;  sy < SS;  sy++)
+            {
+                for (int sx = 0;  sx < SS;  sx++)
+                {
+                    const float px = x + (sx + 0.5f) / SS;
+                    const float py = y + (sy + 0.5f) / SS;
+                    if (py < radius)
+                    {
+                        const float dx = px - cx;
+                        const float dy = py - cy;
+                        if (dx * dx + dy * dy > radius2)
+                            continue;
+                    }
+                    covered++;
+                }
+            }
+
+            unsigned char* pixel = pixels + ((size_t) y * width + x) * 4;
+            pixel[0] = frame;
+            pixel[1] = frame;
+            pixel[2] = frame;
+            pixel[3] = (unsigned char) (covered * 255 / (SS * SS));
+        }
+    }
+
+    const GLFWimage image = { width, height, pixels };
+    struct wl_buffer* buffer = createShmBuffer(&image);
+    _glfw_free(pixels);
+    return buffer;
+}
+
+static void createFallbackButton(_GLFWwindow* window,
+                                 _GLFWfallbackEdgeWayland* button,
+                                 struct wl_buffer* buffer,
+                                 int renderScale)
+{
+    button->surface = wl_compositor_create_surface(_glfw.wl.compositor);
+    wl_surface_set_user_data(button->surface, window);
+    wl_proxy_set_tag((struct wl_proxy*) button->surface, &_glfw.wl.tag);
+    button->subsurface =
+        wl_subcompositor_get_subsurface(_glfw.wl.subcompositor,
+                                        button->surface, window->wl.surface);
+    button->viewport = NULL;
+    wl_surface_set_buffer_scale(button->surface, renderScale);
+    wl_surface_attach(button->surface, buffer, 0, 0);
+    wl_surface_commit(button->surface);
+}
+
+static void positionFallbackButtons(_GLFWwindow* window)
+{
+    wl_subsurface_set_position(window->wl.fallback.topLeftCorner.subsurface,
+                               -GLFW_BORDER_SIZE, -GLFW_CAPTION_HEIGHT);
+    wl_surface_commit(window->wl.fallback.topLeftCorner.surface);
+    wl_subsurface_set_position(window->wl.fallback.topRightCorner.subsurface,
+                               window->wl.width + GLFW_BORDER_SIZE - GLFW_CORNER_RADIUS,
+                               -GLFW_CAPTION_HEIGHT);
+    wl_surface_commit(window->wl.fallback.topRightCorner.surface);
+
+    const int y = -GLFW_CAPTION_HEIGHT + (GLFW_CAPTION_HEIGHT - GLFW_BUTTON_SIZE) / 2;
+    const int closeX = window->wl.width - GLFW_BUTTON_MARGIN - GLFW_BUTTON_SIZE;
+    const int maximizeX = closeX - GLFW_BUTTON_SPACING - GLFW_BUTTON_SIZE;
+    const int minimizeX = maximizeX - GLFW_BUTTON_SPACING - GLFW_BUTTON_SIZE;
+
+    wl_subsurface_set_position(window->wl.fallback.minimizeButton.subsurface, minimizeX, y);
+    wl_surface_commit(window->wl.fallback.minimizeButton.surface);
+    wl_subsurface_set_position(window->wl.fallback.maximizeButton.subsurface, maximizeX, y);
+    wl_surface_commit(window->wl.fallback.maximizeButton.surface);
+    wl_subsurface_set_position(window->wl.fallback.closeButton.subsurface, closeX, y);
+    wl_surface_commit(window->wl.fallback.closeButton.surface);
+}
+
 static void createFallbackEdge(_GLFWwindow* window,
                                _GLFWfallbackEdgeWayland* edge,
                                struct wl_surface* parent,
                                struct wl_buffer* buffer,
                                int x, int y,
-                               int width, int height)
+                               int width, int height,
+                               GLFWbool opaque)
 {
     edge->surface = wl_compositor_create_surface(_glfw.wl.compositor);
     wl_surface_set_user_data(edge->surface, window);
@@ -211,16 +526,21 @@ static void createFallbackEdge(_GLFWwindow* window,
     wp_viewport_set_destination(edge->viewport, width, height);
     wl_surface_attach(edge->surface, buffer, 0, 0);
 
-    struct wl_region* region = wl_compositor_create_region(_glfw.wl.compositor);
-    wl_region_add(region, 0, 0, width, height);
-    wl_surface_set_opaque_region(edge->surface, region);
+    if (opaque)
+    {
+        struct wl_region* region = wl_compositor_create_region(_glfw.wl.compositor);
+        wl_region_add(region, 0, 0, width, height);
+        wl_surface_set_opaque_region(edge->surface, region);
+        wl_region_destroy(region);
+    }
+
     wl_surface_commit(edge->surface);
-    wl_region_destroy(region);
 }
 
 static void createFallbackDecorations(_GLFWwindow* window)
 {
-    unsigned char data[] = { 224, 224, 224, 255 };
+    const unsigned char frame = (unsigned char) fallbackFrameColor(window->wl.activated);
+    unsigned char data[] = { frame, frame, frame, 255 };
     const GLFWimage image = { 1, 1, data };
 
     if (!_glfw.wl.viewporter)
@@ -231,22 +551,64 @@ static void createFallbackDecorations(_GLFWwindow* window)
     if (!window->wl.fallback.buffer)
         return;
 
+    if (!window->wl.fallback.transparentBuffer)
+    {
+        unsigned char clear[4] = { 0, 0, 0, 0 };
+        const GLFWimage clearImage = { 1, 1, clear };
+        window->wl.fallback.transparentBuffer = createShmBuffer(&clearImage);
+    }
+
+    const int renderScale = fallbackRenderScale(window);
+
+    if (!window->wl.fallback.leftCornerBuffer)
+        window->wl.fallback.leftCornerBuffer = createCornerBuffer(GLFW_TRUE, window->wl.activated, renderScale);
+    if (!window->wl.fallback.rightCornerBuffer)
+        window->wl.fallback.rightCornerBuffer = createCornerBuffer(GLFW_FALSE, window->wl.activated, renderScale);
+    if (!window->wl.fallback.closeBuffer)
+        window->wl.fallback.closeBuffer = createButtonBuffer(GLFW_BUTTON_CLOSE, GLFW_STATE_REST, renderScale);
+    if (!window->wl.fallback.maximizeBuffer)
+        window->wl.fallback.maximizeBuffer = createButtonBuffer(GLFW_BUTTON_MAXIMIZE, GLFW_STATE_REST, renderScale);
+    if (!window->wl.fallback.minimizeBuffer)
+        window->wl.fallback.minimizeBuffer = createButtonBuffer(GLFW_BUTTON_MINIMIZE, GLFW_STATE_REST, renderScale);
+
+    const int outerWidth = window->wl.width + GLFW_BORDER_SIZE * 2;
+
     createFallbackEdge(window, &window->wl.fallback.top, window->wl.surface,
                        window->wl.fallback.buffer,
-                       0, -GLFW_CAPTION_HEIGHT,
-                       window->wl.width, GLFW_CAPTION_HEIGHT);
-    createFallbackEdge(window, &window->wl.fallback.left, window->wl.surface,
-                       window->wl.fallback.buffer,
+                       -GLFW_BORDER_SIZE + GLFW_CORNER_RADIUS, -GLFW_CAPTION_HEIGHT,
+                       outerWidth - GLFW_CORNER_RADIUS * 2, GLFW_CAPTION_HEIGHT, GLFW_TRUE);
+
+    createFallbackEdge(window, &window->wl.fallback.leftGrab, window->wl.surface,
+                       window->wl.fallback.transparentBuffer,
+                       -GLFW_BORDER_SIZE, 0,
+                       GLFW_RESIZE_GRAB, window->wl.height, GLFW_FALSE);
+    createFallbackEdge(window, &window->wl.fallback.rightGrab, window->wl.surface,
+                       window->wl.fallback.transparentBuffer,
+                       window->wl.width + GLFW_BORDER_SIZE - GLFW_RESIZE_GRAB, 0,
+                       GLFW_RESIZE_GRAB, window->wl.height, GLFW_FALSE);
+    createFallbackEdge(window, &window->wl.fallback.bottomGrab, window->wl.surface,
+                       window->wl.fallback.transparentBuffer,
+                       -GLFW_BORDER_SIZE, window->wl.height + GLFW_BORDER_SIZE - GLFW_RESIZE_GRAB,
+                       outerWidth, GLFW_RESIZE_GRAB, GLFW_FALSE);
+
+    createFallbackButton(window, &window->wl.fallback.topLeftCorner,
+                         window->wl.fallback.leftCornerBuffer, renderScale);
+    createFallbackButton(window, &window->wl.fallback.topRightCorner,
+                         window->wl.fallback.rightCornerBuffer, renderScale);
+
+    createFallbackEdge(window, &window->wl.fallback.topGrab, window->wl.surface,
+                       window->wl.fallback.transparentBuffer,
                        -GLFW_BORDER_SIZE, -GLFW_CAPTION_HEIGHT,
-                       GLFW_BORDER_SIZE, window->wl.height + GLFW_CAPTION_HEIGHT);
-    createFallbackEdge(window, &window->wl.fallback.right, window->wl.surface,
-                       window->wl.fallback.buffer,
-                       window->wl.width, -GLFW_CAPTION_HEIGHT,
-                       GLFW_BORDER_SIZE, window->wl.height + GLFW_CAPTION_HEIGHT);
-    createFallbackEdge(window, &window->wl.fallback.bottom, window->wl.surface,
-                       window->wl.fallback.buffer,
-                       -GLFW_BORDER_SIZE, window->wl.height,
-                       window->wl.width + GLFW_BORDER_SIZE * 2, GLFW_BORDER_SIZE);
+                       outerWidth, GLFW_RESIZE_GRAB, GLFW_FALSE);
+
+    createFallbackButton(window, &window->wl.fallback.minimizeButton,
+                         window->wl.fallback.minimizeBuffer, renderScale);
+    createFallbackButton(window, &window->wl.fallback.maximizeButton,
+                         window->wl.fallback.maximizeBuffer, renderScale);
+    createFallbackButton(window, &window->wl.fallback.closeButton,
+                         window->wl.fallback.closeBuffer, renderScale);
+
+    positionFallbackButtons(window);
 
     window->wl.fallback.decorations = GLFW_TRUE;
 }
@@ -273,6 +635,15 @@ static void destroyFallbackDecorations(_GLFWwindow* window)
     destroyFallbackEdge(&window->wl.fallback.left);
     destroyFallbackEdge(&window->wl.fallback.right);
     destroyFallbackEdge(&window->wl.fallback.bottom);
+    destroyFallbackEdge(&window->wl.fallback.topLeftCorner);
+    destroyFallbackEdge(&window->wl.fallback.topRightCorner);
+    destroyFallbackEdge(&window->wl.fallback.leftGrab);
+    destroyFallbackEdge(&window->wl.fallback.rightGrab);
+    destroyFallbackEdge(&window->wl.fallback.bottomGrab);
+    destroyFallbackEdge(&window->wl.fallback.topGrab);
+    destroyFallbackEdge(&window->wl.fallback.closeButton);
+    destroyFallbackEdge(&window->wl.fallback.maximizeButton);
+    destroyFallbackEdge(&window->wl.fallback.minimizeButton);
 }
 
 static void xdgDecorationHandleConfigure(void* userData,
@@ -360,29 +731,35 @@ static GLFWbool resizeWindow(_GLFWwindow* window, int width, int height)
 
     if (window->wl.fallback.decorations)
     {
+        const int outerWidth = window->wl.width + GLFW_BORDER_SIZE * 2;
+
         wp_viewport_set_destination(window->wl.fallback.top.viewport,
-                                    window->wl.width,
+                                    outerWidth - GLFW_CORNER_RADIUS * 2,
                                     GLFW_CAPTION_HEIGHT);
         wl_surface_commit(window->wl.fallback.top.surface);
 
-        wp_viewport_set_destination(window->wl.fallback.left.viewport,
-                                    GLFW_BORDER_SIZE,
-                                    window->wl.height + GLFW_CAPTION_HEIGHT);
-        wl_surface_commit(window->wl.fallback.left.surface);
+        wp_viewport_set_destination(window->wl.fallback.topGrab.viewport,
+                                    outerWidth, GLFW_RESIZE_GRAB);
+        wl_surface_commit(window->wl.fallback.topGrab.surface);
 
-        wl_subsurface_set_position(window->wl.fallback.right.subsurface,
-                                window->wl.width, -GLFW_CAPTION_HEIGHT);
-        wp_viewport_set_destination(window->wl.fallback.right.viewport,
-                                    GLFW_BORDER_SIZE,
-                                    window->wl.height + GLFW_CAPTION_HEIGHT);
-        wl_surface_commit(window->wl.fallback.right.surface);
+        wp_viewport_set_destination(window->wl.fallback.leftGrab.viewport,
+                                    GLFW_RESIZE_GRAB, window->wl.height);
+        wl_surface_commit(window->wl.fallback.leftGrab.surface);
 
-        wl_subsurface_set_position(window->wl.fallback.bottom.subsurface,
-                                -GLFW_BORDER_SIZE, window->wl.height);
-        wp_viewport_set_destination(window->wl.fallback.bottom.viewport,
-                                    window->wl.width + GLFW_BORDER_SIZE * 2,
-                                    GLFW_BORDER_SIZE);
-        wl_surface_commit(window->wl.fallback.bottom.surface);
+        wl_subsurface_set_position(window->wl.fallback.rightGrab.subsurface,
+                                window->wl.width + GLFW_BORDER_SIZE - GLFW_RESIZE_GRAB, 0);
+        wp_viewport_set_destination(window->wl.fallback.rightGrab.viewport,
+                                    GLFW_RESIZE_GRAB, window->wl.height);
+        wl_surface_commit(window->wl.fallback.rightGrab.surface);
+
+        wl_subsurface_set_position(window->wl.fallback.bottomGrab.subsurface,
+                                -GLFW_BORDER_SIZE,
+                                window->wl.height + GLFW_BORDER_SIZE - GLFW_RESIZE_GRAB);
+        wp_viewport_set_destination(window->wl.fallback.bottomGrab.viewport,
+                                    outerWidth, GLFW_RESIZE_GRAB);
+        wl_surface_commit(window->wl.fallback.bottomGrab.surface);
+
+        positionFallbackButtons(window);
     }
 
     return GLFW_TRUE;
@@ -545,6 +922,7 @@ void fractionalScaleHandlePreferredScale(void* userData,
     window->wl.scalingNumerator = numerator;
     _glfwInputWindowContentScale(window, numerator / 120.f, numerator / 120.f);
     resizeFramebuffer(window);
+    redrawFallbackDecorations(window);
 
     if (window->wl.visible)
         _glfwInputWindowDamage(window);
@@ -636,6 +1014,7 @@ static void xdgSurfaceHandleConfigure(void* userData,
             if (window->monitor && window->autoIconify)
                 xdg_toplevel_set_minimized(window->wl.xdg.toplevel);
         }
+        redrawFallbackDecorations(window);
     }
 
     if (window->wl.maximized != window->wl.pending.maximized)
@@ -1390,7 +1769,10 @@ static void pointerHandleEnter(void* userData,
     else
     {
         if (window->wl.fallback.decorations)
+        {
             window->wl.fallback.focus = surface;
+            refreshFallbackButtonBySurface(window, surface);
+        }
     }
 }
 
@@ -1421,7 +1803,10 @@ static void pointerHandleLeave(void* userData,
     else
     {
         if (window->wl.fallback.decorations)
+        {
             window->wl.fallback.focus = NULL;
+            refreshFallbackButtonBySurface(window, surface);
+        }
     }
 }
 
@@ -1456,30 +1841,24 @@ static void pointerHandleMotion(void* userData,
 
         if (window->resizable)
         {
-            if (window->wl.fallback.focus == window->wl.fallback.top.surface)
+            if (window->wl.fallback.focus == window->wl.fallback.topGrab.surface)
             {
-                if (ypos < GLFW_BORDER_SIZE)
-                    cursorName = "n-resize";
-            }
-            else if (window->wl.fallback.focus == window->wl.fallback.left.surface)
-            {
-                if (ypos < GLFW_BORDER_SIZE)
+                if (xpos < GLFW_RESIZE_GRAB)
                     cursorName = "nw-resize";
-                else
-                    cursorName = "w-resize";
-            }
-            else if (window->wl.fallback.focus == window->wl.fallback.right.surface)
-            {
-                if (ypos < GLFW_BORDER_SIZE)
+                else if (xpos > window->wl.width - GLFW_RESIZE_GRAB)
                     cursorName = "ne-resize";
                 else
-                    cursorName = "e-resize";
+                    cursorName = "n-resize";
             }
-            else if (window->wl.fallback.focus == window->wl.fallback.bottom.surface)
+            else if (window->wl.fallback.focus == window->wl.fallback.leftGrab.surface)
+                cursorName = "w-resize";
+            else if (window->wl.fallback.focus == window->wl.fallback.rightGrab.surface)
+                cursorName = "e-resize";
+            else if (window->wl.fallback.focus == window->wl.fallback.bottomGrab.surface)
             {
-                if (xpos < GLFW_BORDER_SIZE)
+                if (xpos < GLFW_RESIZE_GRAB)
                     cursorName = "sw-resize";
-                else if (xpos > window->wl.width + GLFW_BORDER_SIZE)
+                else if (xpos > window->wl.width - GLFW_RESIZE_GRAB)
                     cursorName = "se-resize";
                 else
                     cursorName = "s-resize";
@@ -1538,6 +1917,32 @@ static void pointerHandleButton(void* userData,
     if (!window)
         return;
 
+    if (button == BTN_LEFT &&
+        state == WL_POINTER_BUTTON_STATE_RELEASED &&
+        window->wl.fallback.pressed)
+    {
+        struct wl_surface* pressed = window->wl.fallback.pressed;
+        window->wl.fallback.pressed = NULL;
+
+        if (pressed == window->wl.fallback.focus && window->wl.xdg.toplevel)
+        {
+            if (pressed == window->wl.fallback.closeButton.surface)
+                _glfwInputWindowCloseRequest(window);
+            else if (pressed == window->wl.fallback.minimizeButton.surface)
+                xdg_toplevel_set_minimized(window->wl.xdg.toplevel);
+            else if (pressed == window->wl.fallback.maximizeButton.surface)
+            {
+                if (window->wl.maximized)
+                    xdg_toplevel_unset_maximized(window->wl.xdg.toplevel);
+                else
+                    xdg_toplevel_set_maximized(window->wl.xdg.toplevel);
+            }
+        }
+
+        refreshFallbackButtonBySurface(window, pressed);
+        return;
+    }
+
     if (window->wl.hovered)
     {
         _glfw.wl.serial = serial;
@@ -1551,45 +1956,57 @@ static void pointerHandleButton(void* userData,
 
     if (window->wl.fallback.decorations)
     {
+        struct wl_surface* focus = window->wl.fallback.focus;
+        const GLFWbool onButton =
+            focus == window->wl.fallback.closeButton.surface ||
+            focus == window->wl.fallback.maximizeButton.surface ||
+            focus == window->wl.fallback.minimizeButton.surface;
+
+        if (button == BTN_LEFT && onButton &&
+            state == WL_POINTER_BUTTON_STATE_PRESSED)
+        {
+            window->wl.fallback.pressed = focus;
+            refreshFallbackButtonBySurface(window, focus);
+            return;
+        }
+
         if (button == BTN_LEFT)
         {
-            uint32_t edges = XDG_TOPLEVEL_RESIZE_EDGE_NONE;
-
-            if (window->wl.fallback.focus == window->wl.fallback.top.surface)
+            if (window->wl.fallback.focus == window->wl.fallback.top.surface ||
+                window->wl.fallback.focus == window->wl.fallback.topLeftCorner.surface ||
+                window->wl.fallback.focus == window->wl.fallback.topRightCorner.surface)
             {
-                if (window->wl.cursorPosY < GLFW_BORDER_SIZE)
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP;
-                else
-                    xdg_toplevel_move(window->wl.xdg.toplevel, _glfw.wl.seat, serial);
+                xdg_toplevel_move(window->wl.xdg.toplevel, _glfw.wl.seat, serial);
             }
-            else if (window->wl.fallback.focus == window->wl.fallback.left.surface)
+            else
             {
-                if (window->wl.cursorPosY < GLFW_BORDER_SIZE)
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT;
-                else
+                uint32_t edges = XDG_TOPLEVEL_RESIZE_EDGE_NONE;
+
+                if (window->wl.fallback.focus == window->wl.fallback.topGrab.surface)
+                {
+                    if (window->wl.cursorPosX < GLFW_RESIZE_GRAB)
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT;
+                    else if (window->wl.cursorPosX > window->wl.width - GLFW_RESIZE_GRAB)
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT;
+                    else
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP;
+                }
+                else if (window->wl.fallback.focus == window->wl.fallback.leftGrab.surface)
                     edges = XDG_TOPLEVEL_RESIZE_EDGE_LEFT;
-            }
-            else if (window->wl.fallback.focus == window->wl.fallback.right.surface)
-            {
-                if (window->wl.cursorPosY < GLFW_BORDER_SIZE)
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT;
-                else
+                else if (window->wl.fallback.focus == window->wl.fallback.rightGrab.surface)
                     edges = XDG_TOPLEVEL_RESIZE_EDGE_RIGHT;
-            }
-            else if (window->wl.fallback.focus == window->wl.fallback.bottom.surface)
-            {
-                if (window->wl.cursorPosX < GLFW_BORDER_SIZE)
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT;
-                else if (window->wl.cursorPosX > window->wl.width + GLFW_BORDER_SIZE)
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT;
-                else
-                    edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM;
-            }
+                else if (window->wl.fallback.focus == window->wl.fallback.bottomGrab.surface)
+                {
+                    if (window->wl.cursorPosX < GLFW_RESIZE_GRAB)
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT;
+                    else if (window->wl.cursorPosX > window->wl.width - GLFW_RESIZE_GRAB)
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT;
+                    else
+                        edges = XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM;
+                }
 
-            if (edges != XDG_TOPLEVEL_RESIZE_EDGE_NONE)
-            {
-                xdg_toplevel_resize(window->wl.xdg.toplevel, _glfw.wl.seat,
-                                    serial, edges);
+                if (edges != XDG_TOPLEVEL_RESIZE_EDGE_NONE)
+                    xdg_toplevel_resize(window->wl.xdg.toplevel, _glfw.wl.seat, serial, edges);
             }
         }
         else if (button == BTN_RIGHT)
